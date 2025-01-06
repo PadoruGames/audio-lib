@@ -6,12 +6,13 @@ using Debug = Padoru.Diagnostics.Debug;
 
 namespace Padoru.Audio
 {
-    public class PadoruAudioSource : MonoBehaviour
+    public class PadoruAudioSource : MonoBehaviour, ITickable
     {
         [SerializeField] private string fileId;
         [SerializeField] private bool trackObject;
 
         private IAudioManager audioManager;
+        private ITickManager tickManager;
         private AudioFile audioFile;
         private AudioSource audioSource;
         private bool isPlaying;
@@ -38,12 +39,6 @@ namespace Padoru.Audio
                     return false;
                 }
 
-                if (isPlaying)
-                {
-                    Debug.LogWarning("Audio is already playing", gameObject);
-                    return false;
-                }
-
                 if (audioFile.Disabled)
                 {
                     Debug.LogWarning("You are trying to play a disabled audio", gameObject);
@@ -54,6 +49,12 @@ namespace Padoru.Audio
             }
         }
 
+        private void Awake()
+        {
+            tickManager = Locator.Get<ITickManager>();
+            tickManager.Register(this);
+        }
+
         private void Start()
         {
             if (!initialized)
@@ -61,9 +62,36 @@ namespace Padoru.Audio
                 Init();
             }
 
+            if (audioFile is { PlayOnAwake: true })
+            {
+                Play();
+            }
+        }
+
+        private void OnEnable()
+        {
             if (audioFile != null && audioFile.PlayOnAwake)
             {
                 Play();
+            }
+        }
+
+        /// <summary>
+        /// If you want this change to take effect you need to initialize again
+        /// </summary>
+        public void SetAudioFileId(string fileId)
+        {
+            this.fileId = fileId;
+        }
+
+        public void Tick(float deltaTime)
+        {
+            if(audioFile != null && isPlaying && !audioFile.Loop)
+            {
+                if(Time.time - playTime >= audioDuration)
+                {
+                    FinishAudio();
+                }
             }
         }
 
@@ -80,36 +108,12 @@ namespace Padoru.Audio
             try
             {
                 audioFile = audioManager.GetAudioFile(fileId);
+
+                initialized = true;
             }
             catch (Exception e)
             {
-                Debug.LogException("Failed to initialize Audio File", e);
-            }
-
-            initialized = true;
-        }
-
-        private void OnEnable()
-        {
-            if (audioFile != null && audioFile.PlayOnAwake)
-            {
-                Play();
-            }
-        }
-
-        private void OnDisable()
-        {
-            Stop();
-        }
-
-        private void Update()
-        {
-            if(audioFile  != null && isPlaying && !audioFile.Loop)
-            {
-                if(Time.time - playTime >= audioDuration)
-                {
-                    FinishAudio();
-                }
+                Debug.LogException("Failed to initialize Audio File", e, gameObject);
             }
         }
 
@@ -147,6 +151,14 @@ namespace Padoru.Audio
             playTime = Time.time;
             audioDuration = audioFile.Clip.length;
 
+            var pitch = 1f;
+
+            if (audioFile.ShiftPitch)
+            {
+                pitch = audioFile.MinMaxPitch.GetRandomValue();
+            }
+
+            audioSource.pitch = pitch;
             audioSource.Play();
         }
 
@@ -158,14 +170,6 @@ namespace Padoru.Audio
             }
 
             FinishAudio();
-        }
-
-        /// <summary>
-        /// If you want this change to take effect you need to initialize again
-        /// </summary>
-        public void SetAudioFileId(string fileId)
-        {
-            this.fileId = fileId;
         }
 
         private void FinishAudio()
@@ -187,6 +191,8 @@ namespace Padoru.Audio
             isPlaying = false;
 
             OnAudioFinish?.Invoke(this);
+            
+            tickManager.Unregister(this);
         }
 
         private void SetupAudioSource()

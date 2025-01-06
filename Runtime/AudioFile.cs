@@ -1,4 +1,5 @@
-﻿using UnityEngine;
+﻿using Padoru.Core.Utils;
+using UnityEngine;
 using UnityEngine.Audio;
 
 namespace Padoru.Audio
@@ -6,11 +7,14 @@ namespace Padoru.Audio
     [System.Serializable]
     public class AudioFile
     {
-        public AudioClip Clip { get; set; }
-        public AudioMixerGroup Mixer { get;  set;}
-        public float Volume { get;  set; }
-        public bool PlayOnAwake { get;  set; }
-        public bool Loop { get; set; }
-        public bool Disabled { get; set; }
+        public AudioClip Clip;
+        public AudioMixerGroup Mixer;
+        [Range(0, 1)]
+        public float Volume;
+        public bool PlayOnAwake;
+        public bool Loop;
+        public bool Disabled;
+        public bool ShiftPitch;
+        public MinMax MinMaxPitch;
     }
 }

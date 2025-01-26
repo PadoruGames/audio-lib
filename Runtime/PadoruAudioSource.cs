@@ -1,24 +1,21 @@
 ﻿using Padoru.Core;
 using System;
+using Padoru.Core.Utils;
 using UnityEngine;
 
 using Debug = Padoru.Diagnostics.Debug;
 
 namespace Padoru.Audio
 {
-    public class PadoruAudioSource : MonoBehaviour, ITickable
+    public class PadoruAudioSource : MonoBehaviour
     {
         [SerializeField] private string fileId;
         [SerializeField] private bool trackObject;
 
         private IAudioManager audioManager;
-        private ITickManager tickManager;
         private AudioFile audioFile;
-        private AudioSource audioSource;
-        private bool isPlaying;
+        private AudioSource currentAudioSource;
 
-        private float playTime;
-        private float audioDuration;
         private bool initialized;
 
         public event Action<PadoruAudioSource> OnAudioFinish;
@@ -49,12 +46,6 @@ namespace Padoru.Audio
             }
         }
 
-        private void Awake()
-        {
-            tickManager = Locator.Get<ITickManager>();
-            tickManager.Register(this);
-        }
-
         private void Start()
         {
             if (!initialized)
@@ -82,17 +73,6 @@ namespace Padoru.Audio
         public void SetAudioFileId(string fileId)
         {
             this.fileId = fileId;
-        }
-
-        public void Tick(float deltaTime)
-        {
-            if(audioFile != null && isPlaying && !audioFile.Loop)
-            {
-                if(Time.time - playTime >= audioDuration)
-                {
-                    FinishAudio();
-                }
-            }
         }
 
         public void Init()
@@ -129,7 +109,7 @@ namespace Padoru.Audio
                 return;
             }
 
-            isPlaying = true;
+            AudioSource audioSource = null;
             
             try
             {
@@ -146,62 +126,56 @@ namespace Padoru.Audio
                 return;
             }
 
-            SetupAudioSource();
+            SetupAudioSource(audioSource);
 
-            playTime = Time.time;
-            audioDuration = audioFile.Clip.length;
+            currentAudioSource = audioSource;
+            currentAudioSource.Play();
 
-            var pitch = 1f;
-
-            if (audioFile.ShiftPitch)
+            if (!audioFile.Loop)
             {
-                pitch = audioFile.MinMaxPitch.GetRandomValue();
+                var countdown = new Countdown(audioFile.Clip.length);
+                countdown.OnCountdownEnded += () =>
+                {
+                    FinishAudio(audioSource);
+                };
+                countdown.Start();
             }
-
-            audioSource.pitch = pitch;
-            audioSource.Play();
         }
 
         public void Stop()
         {
-            if(audioSource != null)
+            if(currentAudioSource != null)
             {
-                audioSource.Stop();
+                currentAudioSource.Stop();
             }
 
-            FinishAudio();
+            FinishAudio(currentAudioSource);
+
+            currentAudioSource = null;
         }
 
-        private void FinishAudio()
+        private void FinishAudio(AudioSource audioSource)
         {
-            if (audioSource != null)
+            try
             {
-                try
-                {
-                    audioManager.ReturnAudioSource(audioSource);
-                }
-                catch (Exception e)
-                {
-                    Debug.LogException($"Failed to return audio source", e);
-                }
-
-                audioSource = null;
+                audioManager.ReturnAudioSource(audioSource);
             }
-
-            isPlaying = false;
+            catch (Exception e)
+            {
+                Debug.LogException("Failed to return audio source", e);
+            }
 
             OnAudioFinish?.Invoke(this);
-            
-            tickManager.Unregister(this);
         }
 
-        private void SetupAudioSource()
+        private void SetupAudioSource(AudioSource audioSource)
         {
             audioSource.playOnAwake = false;
             audioSource.outputAudioMixerGroup = audioFile.Mixer;
             audioSource.clip = audioFile.Clip;
             audioSource.volume = audioFile.Volume;
             audioSource.loop = audioFile.Loop;
+            audioSource.pitch = audioFile.ShiftPitch ? audioFile.MinMaxPitch.GetRandomValue() : 1f;
 
             if (trackObject)
             {

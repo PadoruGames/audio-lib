@@ -158,7 +158,11 @@ namespace Padoru.Audio
         {
             try
             {
-                audioManager.ReturnAudioSource(audioSource);
+                // Check this in case the audio source was destroyed because the parent was destroyed
+                if (audioSource != null)
+                {
+                    audioManager.ReturnAudioSource(audioSource);
+                }
             }
             catch (Exception e)
             {
